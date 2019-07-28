@@ -123,9 +123,12 @@ print_table() {
 	local -n table=${2}
 
 	if (( ${#table[@]} )); then
+		(
+		IFS=$'\n'
 		for row in ${table[@]}; do
 			echo "${header^^}|${row}"
-		done  |\
+		done
+		) |\
 		awk -F \| '{ printf "%-8s %-38s %-30s %-20s %-30s\n", $1, $2, $3, $4, $5 }' |\
 		sed 's/[[:blank:]]*$//'
 	fi
