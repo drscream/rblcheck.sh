@@ -65,10 +65,6 @@ ips.backscatterer.org
 # Synopsis of recent activity in DroneBL. DroneBL is a realtime monitor of
 # abusable IPs, which has the goal of stopping abuse of infected machines.
 dnsbl.dronebl.org
-# ANTISPAM-UFRJ: Realtime Spammers Blacklist, Open-Relays Verify Engine
-# Database List
-rsbl.aupads.org
-orvedb.aupads.org
 ## Spam Rats!
 # Conform to a naming convention that is indicative of a home connection or
 # dynamic address space.
