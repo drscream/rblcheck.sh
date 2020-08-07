@@ -36,8 +36,6 @@ rhsbl.sorbs.net
 # a delisting. (Includes both old.spam.dnsbl.sorbs.net and
 # escalations.dnsbl.sorbs.net).
 spam.dnsbl.sorbs.net
-# 510 SOFTWARE GROUP, blacklist
-blackholes.five-ten-sg.com
 # Woody's SMTP Blacklist
 blacklist.woody.ch
 # The traditional IPv4 bogon prefixes; Martian (reserved) prefixes plus those /8
