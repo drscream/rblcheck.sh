@@ -82,8 +82,8 @@ korea.services.net
 # Provided by www.kisarbl.or.kr
 spamlist.or.kr
 )
-DNS_TRIES=2
-DNS_DURATION=3
+DNS_TRIES=4
+DNS_DURATION=4
 
 # Hostname and default IPs
 HOSTNAME=$(hostname)
