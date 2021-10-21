@@ -81,6 +81,11 @@ uribl.swinog.ch
 korea.services.net
 # Provided by www.kisarbl.or.kr
 spamlist.or.kr
+# GBUdb stands for Good, Bad, Ugly database. GBUdb is a real-time collaborative
+# IP reputation system. This system is built into Message Sniffer where it can
+# accurately learn about the kind of content that is sent by email sources on
+# the Internet.
+truncate.gbudb.net
 )
 DNS_TRIES=4
 DNS_DURATION=4
