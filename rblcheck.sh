@@ -25,17 +25,6 @@ b.barracudacentral.org
 # should reduce false positives because any user can remove their ISP's mail
 # server from the list.
 psbl.surriel.com
-# SORBS:
-## Open SMTP/Proxies, Spammed WWW Servers, Dynamic IP ranges
-dnsbl.sorbs.net
-# List of domain names where the A or MX records point to bad address space or
-# the owners have indicated no email should ever originate from these domains.
-rhsbl.sorbs.net
-# List of hosts that have been noted as sending spam/UCE/UBE to the admins of
-# SORBS at any time, and not subsequently resolving the matter and/or requesting
-# a delisting. (Includes both old.spam.dnsbl.sorbs.net and
-# escalations.dnsbl.sorbs.net).
-spam.dnsbl.sorbs.net
 # Woody's SMTP Blacklist
 blacklist.woody.ch
 # The traditional IPv4 bogon prefixes; Martian (reserved) prefixes plus those /8
