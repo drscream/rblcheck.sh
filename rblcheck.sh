@@ -68,8 +68,6 @@ dnsrbl.swinog.ch
 uribl.swinog.ch
 # South Korean Network Blocking List
 korea.services.net
-# Provided by www.kisarbl.or.kr
-spamlist.or.kr
 # GBUdb stands for Good, Bad, Ugly database. GBUdb is a real-time collaborative
 # IP reputation system. This system is built into Message Sniffer where it can
 # accurately learn about the kind of content that is sent by email sources on
