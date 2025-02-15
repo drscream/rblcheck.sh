@@ -61,8 +61,6 @@ noptr.spamrats.com
 # IP Addresses that do not conform to more commonly known threats. This is
 # usually because of compromised servers, hosts, or open relays.
 spam.spamrats.com
-# DNSBL (DNS-based blacklist) of NiX Spam
-ix.dnsbl.manitu.net
 # ImproWare AG, DNSRBL / URIBL
 dnsrbl.swinog.ch
 uribl.swinog.ch
