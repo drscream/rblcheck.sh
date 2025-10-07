@@ -40,9 +40,6 @@ cbl.abuseat.org
 # Combined DNSBL listing IPs with Hacking activities, Hijacked webserver,
 # Referer spam.
 combined.abuse.ch
-# WPBL is a private block list consisting of IP addresses which connect to
-# members' systems and deliver unsolicited bulk mail (spam)
-db.wpbl.info
 # UCEPROTECT Network, Level 1 lists single IP's only; Level 2 escalates within;
 # allocation; Level 3 lists IP Space of the worst ASN's.
 dnsbl-1.uceprotect.net
