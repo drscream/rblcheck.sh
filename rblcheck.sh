@@ -266,3 +266,16 @@ else
 		print_table "Timeout" rbl_timeout
 	fi
 fi
+
+# Exit codes for cron/monitoring integration:
+#   0 — clean: no listings, no infrastructure errors
+#   1 — one or more IPs are listed in an RBL
+#   2 — blacklist DNS broken or returning invalid responses
+#   3 — DNS timeouts (network or resolver issue)
+if (( ${#rbl_listed[@]} )); then
+	exit 1
+elif (( ${#rbl_invalid[@]} )); then
+	exit 2
+elif (( ${#rbl_timeout[@]} )); then
+	exit 3
+fi
