@@ -95,6 +95,12 @@ truncate.gbudb.net
 DNS_TRIES=4
 DNS_DURATION=4
 
+# Retry settings for transient failures (TIMEOUT, broken blacklist DNS).
+# RETRY_COUNT: number of additional attempts after the first failure.
+# RETRY_DELAY: seconds to wait between attempts.
+RETRY_COUNT=2
+RETRY_DELAY=60
+
 # Hostname and default IPs
 HOSTNAME=$(hostname)
 
@@ -144,6 +150,69 @@ print_table() {
 	fi
 }
 
+# Check a single IP against a single blacklist, retrying on transient failures.
+# Appends results directly to the global rbl_* arrays.
+check_blacklist() {
+	local ip=${1} ip_reverse=${2} blacklist=${3}
+	local query="${ip_reverse}.${blacklist}."
+	local logtxt="${ip}|${blacklist}"
+	local -a state=()
+	local -i attempt=0
+	local bl_domain ns1 ns2 ns3 return_a extra_info
+
+	while true; do
+		mapfile -t state < <(dns_status_lookup A "${query}")
+
+		case ${state[0]} in
+			TIMEOUT)
+				if (( attempt < RETRY_COUNT )); then
+					(( attempt++ ))
+					sleep "${RETRY_DELAY}"
+					continue
+				fi
+				rbl_timeout+=( "${logtxt}" )
+				return
+				;;
+			NXDOMAIN)
+				# Distinguish "not listed" from "blacklist DNS is broken"
+				bl_domain=$(echo "${blacklist}" | awk -F. '{ print $(NF-1)"."$NF }')
+				ns1=$(dns_status_lookup NS "${blacklist}." | head -1)
+				ns2=$(dns_status_lookup A  "${blacklist}." | head -1)
+				ns3=$(dns_status_lookup A  "${bl_domain}"  | head -1)
+
+				if [[ ${ns1} != 'NOERROR' && ${ns2} != 'NOERROR' && ${ns3} != 'NOERROR' ]]; then
+					# Blacklist DNS is broken — retry
+					if (( attempt < RETRY_COUNT )); then
+						(( attempt++ ))
+						sleep "${RETRY_DELAY}"
+						continue
+					fi
+					rbl_invalid+=( "${logtxt}|_|DNS-lookup-failed" )
+				else
+					rbl_passed+=( "${logtxt}" )
+				fi
+				return
+				;;
+			NOERROR)
+				for return_a in "${state[@]:1}"; do
+					if [[ ${return_a} =~ ^127\.0 ]]; then
+						extra_info=$(dns_txt_lookup "${query}")
+						rbl_listed+=( "${logtxt}|${return_a}|${extra_info}" )
+					else
+						rbl_invalid+=( "${logtxt}|${return_a}" )
+					fi
+				done
+				return
+				;;
+			*)
+				# Unexpected state — do not retry
+				rbl_invalid+=( "${logtxt}|_|unexpected-state-${state[0]}" )
+				return
+				;;
+		esac
+	done
+}
+
 
 ##
 ## Main
@@ -174,47 +243,7 @@ for ip_list in "${IP_LIST[@]}"; do
 	ip=${ip_list%%|*}
 	ip_reverse=${ip_list##*|}
 	for blacklist in "${BLACKLISTS[@]}"; do
-		query=${ip_reverse}.${blacklist}.
-		logtxt="${ip}|${blacklist}"
-
-		# Status lookup — mapfile keeps each output line as a separate array
-		# element without word-splitting side effects.
-		mapfile -t state < <(dns_status_lookup A "${query}")
-
-		case ${state[0]} in
-			TIMEOUT)
-				# Lookup to blacklist not possible
-				rbl_timeout+=( "${logtxt}" )
-				;;
-			NXDOMAIN)
-				# STATUS: NXDOMAIN = ( blacklist not working || not blacklisted )
-				bl_domain=$(echo "${blacklist}" | awk -F. '{ print $(NF-1)"."$NF }')
-				ns1=$(dns_status_lookup NS "${blacklist}." | head -1)
-				ns2=$(dns_status_lookup A  "${blacklist}." | head -1)
-				ns3=$(dns_status_lookup A  "${bl_domain}"  | head -1)
-
-				if [[ ${ns1} != 'NOERROR' && ${ns2} != 'NOERROR' && ${ns3} != 'NOERROR' ]]; then
-					# STATUS: NXDOMAIN = blacklist not working
-					rbl_invalid+=( "${logtxt}|_|DNS-lookup-failed" )
-				else
-					# STATUS: NXDOMAIN = not blacklisted
-					rbl_passed+=( "${logtxt}" )
-				fi
-				;;
-			NOERROR)
-				# STATUS: NOERROR = potentially blacklisted
-				for return_a in "${state[@]:1}"; do
-					if [[ ${return_a} =~ ^127\.0 ]]; then
-						# A: starts with 127.0 = blacklisted, state information
-						extra_info=$(dns_txt_lookup "${query}")
-						rbl_listed+=( "${logtxt}|${return_a}|${extra_info}" )
-					else
-						# A: not 127.0 = invalid response from blacklist
-						rbl_invalid+=( "${logtxt}|${return_a}" )
-					fi
-				done
-				;;
-		esac
+		check_blacklist "${ip}" "${ip_reverse}" "${blacklist}"
 	done
 done
 
