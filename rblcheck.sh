@@ -6,6 +6,29 @@ set -e
 set -o pipefail
 
 ##
+## Arguments
+##
+verbose=0
+case ${1:-} in
+	-v|--verbose)
+		verbose=1
+		;;
+	-h|--help)
+		echo "Usage: $(basename "$0") [-v|--verbose] [-h|--help]"
+		echo ""
+		echo "  -v, --verbose   Show all results including passed checks"
+		echo "  -h, --help      Show this help message"
+		exit 0
+		;;
+	'') ;;
+	*)
+		echo "Unknown option: ${1}" >&2
+		echo "Usage: $(basename "$0") [-v|--verbose] [-h|--help]" >&2
+		exit 1
+		;;
+esac
+
+##
 ## Configuration
 ##
 BLACKLISTS=(
@@ -76,9 +99,8 @@ DNS_DURATION=4
 HOSTNAME=$(hostname)
 
 DIG="dig +noall +time=${DNS_DURATION} +tries=${DNS_TRIES}"
-# TODO: timeout check (return code)
-IPV4=$(${DIG} +short A ${HOSTNAME})
-IPV6=$(${DIG} +short AAAA ${HOSTNAME})
+IPV4=$(${DIG} +short A "${HOSTNAME}")
+IPV6=$(${DIG} +short AAAA "${HOSTNAME}")
 
 ##
 ## Functions
@@ -86,31 +108,38 @@ IPV6=$(${DIG} +short AAAA ${HOSTNAME})
 dns_status_lookup() {
 	local record=${1}
 	local query=${2}
+	local dig_output
+	local -i dig_rc=0
 
-	${DIG} +comments +answer ${record} ${query} | \
-		sed -n 's/;.*status: \([A-Z]*\),.*/\1/p; s/.*IN[[:space:]]*A[[:space:]]*\(.*\)/\1/p'
-	if (( ${PIPESTATUS[0]} > 0 )); then
+	# Capture output and exit code separately; avoids unreachable PIPESTATUS
+	# check under set -e + set -o pipefail.
+	dig_output=$(${DIG} +comments +answer "${record}" "${query}" 2>/dev/null) || dig_rc=$?
+
+	if (( dig_rc > 0 )); then
 		echo 'TIMEOUT'
+		return
 	fi
+
+	echo "${dig_output}" | \
+		sed -n 's/;.*status: \([A-Z]*\),.*/\1/p; s/.*IN[[:space:]]*A[[:space:]]*\(.*\)/\1/p'
 }
 
 dns_txt_lookup() {
 	local query=${1}
-	${DIG} +short TXT ${query} | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/;/g'
+	${DIG} +short TXT "${query}" | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/;/g'
 }
 
 print_table() {
-	header=${1}
+	local header=${1}
 	local -n table=${2}
+	local upper_header="${header^^}"
+	local row
 
 	if (( ${#table[@]} )); then
-		(
-		IFS=$'\n'
-		for row in ${table[@]}; do
-			echo "${header^^}|${row}"
-		done
-		) |\
-		awk -F \| '{ printf "%-8s %-38s %-30s %-20s %-30s\n", $1, $2, $3, $4, $5 }' |\
+		for row in "${table[@]}"; do
+			echo "${upper_header}|${row}"
+		done | \
+		awk -F \| '{ printf "%-8s %-38s %-30s %-20s %-30s\n", $1, $2, $3, $4, $5 }' | \
 		sed 's/[[:blank:]]*$//'
 	fi
 }
@@ -120,21 +149,20 @@ print_table() {
 ## Main
 ##
 # Declare arrays
-rbl_timeout=()
-rbl_invalid=()
-rbl_passed=()
-rbl_listed=()
-state=()
+declare -a rbl_timeout=()
+declare -a rbl_invalid=()
+declare -a rbl_passed=()
+declare -a rbl_listed=()
+declare -a IP_LIST=()
 
 # Create IP address list
 IP_LIST_IN="${IPV4} ${IPV6}"
-IP_LIST_REV=()
 for ip in ${IP_LIST_IN}; do
 	if [[ ${ip} =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
 		# IPv6
-		IP_LIST+=( "${ip}|$(${DIG} +question -x ${ip} | sed -n 's/;\(.*\)\.ip6.arpa.*/\1/p')" )
+		IP_LIST+=( "${ip}|$(${DIG} +question -x "${ip}" | sed -n 's/;\(.*\)\.ip6.arpa.*/\1/p')" )
 	elif [[ ${ip} =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-		IP_LIST+=( "${ip}|$(echo ${ip} | awk -F. '{ print $4"."$3"."$2"."$1 }')" )
+		IP_LIST+=( "${ip}|$(echo "${ip}" | awk -F. '{ print $4"."$3"."$2"."$1 }')" )
 	else
 		echo 'IP address is not valid and could not be used'
 		exit 1
@@ -142,16 +170,16 @@ for ip in ${IP_LIST_IN}; do
 done
 
 # Lookup Blacklists
-for ip_list in ${IP_LIST[@]}; do
-	ip=${ip_list/|*}
-	ip_reverse=${ip_list/*|}
-	for blacklist in ${BLACKLISTS[@]}; do
+for ip_list in "${IP_LIST[@]}"; do
+	ip=${ip_list%%|*}
+	ip_reverse=${ip_list##*|}
+	for blacklist in "${BLACKLISTS[@]}"; do
 		query=${ip_reverse}.${blacklist}.
 		logtxt="${ip}|${blacklist}"
-		return_a=''
 
-		# Status lookup
-		state=( $(dns_status_lookup A ${query}) )
+		# Status lookup — mapfile keeps each output line as a separate array
+		# element without word-splitting side effects.
+		mapfile -t state < <(dns_status_lookup A "${query}")
 
 		case ${state[0]} in
 			TIMEOUT)
@@ -160,10 +188,12 @@ for ip_list in ${IP_LIST[@]}; do
 				;;
 			NXDOMAIN)
 				# STATUS: NXDOMAIN = ( blacklist not working || not blacklisted )
-				bl_domain=$(echo ${blacklist} | awk -F. '{ print $(NF-1)"."$NF }')
-				ns_state=( $(dns_status_lookup NS ${blacklist}.) $(dns_status_lookup A ${blacklist}.) $(dns_status_lookup A ${bl_domain}))
+				bl_domain=$(echo "${blacklist}" | awk -F. '{ print $(NF-1)"."$NF }')
+				ns1=$(dns_status_lookup NS "${blacklist}." | head -1)
+				ns2=$(dns_status_lookup A  "${blacklist}." | head -1)
+				ns3=$(dns_status_lookup A  "${bl_domain}"  | head -1)
 
-				if [[ ${ns_state[0]} != 'NOERROR' && ${ns_state[1]} != 'NOERROR' && ${ns_state[2]} != 'NOERROR' ]]; then
+				if [[ ${ns1} != 'NOERROR' && ${ns2} != 'NOERROR' && ${ns3} != 'NOERROR' ]]; then
 					# STATUS: NXDOMAIN = blacklist not working
 					rbl_invalid+=( "${logtxt}|_|DNS-lookup-failed" )
 				else
@@ -173,10 +203,10 @@ for ip_list in ${IP_LIST[@]}; do
 				;;
 			NOERROR)
 				# STATUS: NOERROR = potentially blacklisted
-				for return_a in ${state[@]:1}; do
-					if [[ ${return_a} =~ ^127.0 ]]; then
+				for return_a in "${state[@]:1}"; do
+					if [[ ${return_a} =~ ^127\.0 ]]; then
 						# A: starts with 127.0 = blacklisted, state information
-						extra_info=$(dns_txt_lookup ${query})
+						extra_info=$(dns_txt_lookup "${query}")
 						rbl_listed+=( "${logtxt}|${return_a}|${extra_info}" )
 					else
 						# A: not 127.0 = invalid response from blacklist
@@ -192,15 +222,7 @@ done
 ##
 ## OUTPUT
 ##
-# Options
-verbose=0
-case ${1} in
-	-v|--verbose)
-		verbose=1
-		;;
-esac
-
-if (( ${verbose} || ${#rbl_listed[@]} )); then
+if (( verbose || ${#rbl_listed[@]} )); then
 	printf "%-8s %-38s %-30s %-20s %-30s\n" Status IP List Return Extra
 	printf "%-8s %-38s %-30s %-20s %-30s\n" ------ -- ---- ------ -----
 	print_table "Listed " rbl_listed
